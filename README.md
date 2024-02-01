@@ -4,4 +4,4 @@ This project is basically about using R to clean messy data. I used some librari
 - rebus
 - magrittr
 - hunspell (to check for spelling errors)
-The project report can be accessed [here] (https://rpubs.com/Sirgovie/datacleaning)
+The project report can be accessed [here](https://rpubs.com/Sirgovie/datacleaning)
