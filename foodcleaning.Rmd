@@ -1,0 +1,251 @@
+## Data Cleaning of the Food-Choice Preferences of College Students Dataset 
+
+This dataset includes information on food choices, nutrition, preferences, childhood favorites, and other information from college students. There are 126 responses from students. Data is raw and uncleaned. The dataset can be accessed [here](https://www.kaggle.com/datasets/borapajo/food-choices/data). 
+
+Functions used in this project include: 
+
+- case match 
+- case when 
+- str_subset
+- str_replace, and others 
+
+
+Import all necessary libraries
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(rebus)
+library(magrittr)
+```
+
+Import the dataset and view the first 20 rows
+```{r}
+food_choices <- read.csv("food_coded.csv", header = T)
+```
+assess the imported dataframe
+```{r}
+glimpse(food_choices)
+
+```
+This dataframe consists of 125 rows and 61 columns.
+
+To check for the number of null values in each column, I'll use the `ColSums` function, store it in a tibble then rename the columns of the tibble
+```{r}
+nulls <- tibble(names(food_choices), colSums(is.na(food_choices))) 
+names(nulls) <- c('column', 'n')
+nulls %>% 
+  filter(n>0) %>% 
+  arrange(-n) # arrange in descending order of number of nulls 
+
+```
+From the query above, it is evident that there are 20 columns with at least one null value. 
+<br>
+<br>
+To handle null values, there are different approaches, including deleting the rows which contain these null values. This might not be the best choice here considering  the relatively small size of the dataset. Instead, I have chosen to replace null values with the modal (mode) value for categorical values and with the mean for other numeric columns.
+```{r warning=FALSE}
+mode_calories <- names(sort(table(food_choices$calories_day), decreasing = T))[1] #extract the modal value 
+food_choices$calories_day[is.na(food_choices$calories_day)] <- mode_calories # replace null values with the extracted modal values
+```
+repeat this step for the cuisine column
+```{r warning=FALSE}
+mode_cuisine <- names(sort(table(food_choices$cuisine), decreasing = T))
+food_choices$cuisine[is.na(food_choices$cuisine)] <- mode_cuisine
+```
+
+There are other columns in the dataframe containing missing values, however, it won't be efficient to repeat the same code for so many columns. Instead, I've utilized a "for" loop that checks for the modal value in all these columns and replaces the nulls with them. 
+```{r}
+# food_choices' is your data frame
+#
+
+for(col in c('exercise', 'employment', 'cook', 'mother_education')) {
+  mode_val <- names(sort(table(food_choices[[col]]), decreasing = TRUE)[1]) # extract the modal value
+  food_choices[[col]][is.na(food_choices[[col]])] <- mode_val
+}
+
+```
+
+The above step has been repeated here. 
+```{r}
+for(col in c('drink', 'fav_food', 'sports')) {
+  mode_1 <- names(sort(table(food_choices[[col]]), decreasing = T)[1])
+  food_choices[[col]][is.na(food_choices[[col]])] <- mode_1
+}
+```
+Now, all null values have been treated and this can once again be confirmed using the `ColSums` function. 
+```{r}
+colSums(is.na(food_choices))
+```
+
+This column is a duplicate so it will be dropped.
+```{r}
+food_choices <- food_choices %>% 
+  select(-comfort_food_reasons_coded)
+```
+
+Due to the large number of columns, I will clean only a select few that will be useful in answering the questions highlighted below.
+
+- Is there any impact of regular exercise on an individual's weight? (gender, exercise, and weight columns will be necessary for this question)
+- are students who exercise regularly more likely to make better food choices?
+
+Before that, the GPA column presents an exciting opportunity to flex our data cleaning muscle. First, I'll use the `table` function to have a general overview of the values contained within this column. 
+
+- There's a value "3.79 bitch" that needs to be cleaned, and a regex pattern will be used to isolate this value and then clean it. 
+- replace unknown values with the average gpa value
+
+```{r}
+table(food_choices$GPA) # gpa distribution
+pat <- "\\d*\\.\\d*\\s" # regex to check for decimal numbers followed by a space
+matched_gpa <- str_subset(food_choices$GPA, pat)
+
+cleaned_gpa<- sub(" bitch", "", str_subset(food_choices$GPA, pat)) # use the sub function to replace the unnecessary text with an empty string
+food_choices$GPA[which(food_choices$GPA %in% matched_gpa)] <- cleaned_gpa 
+
+dgt <- "\\d*\\.?\\d+" # regex to check for all decimal numbers
+char_gpa <- str_subset(food_choices$GPA, dgt)
+round(mean(as.numeric(char_gpa)), 2)
+
+wrds <- "^[^0-9]"
+unc <- str_subset(food_choices$GPA, wrds)
+food_choices$GPA[which(food_choices$GPA %in% unc)] <- round(mean(as.numeric(char_gpa)), 2) # replace gpa's with unknown value with mean
+
+food_choices$GPA <- as.numeric(food_choices$GPA) # convert to numeric
+class(food_choices$GPA)
+
+```
+For the gpa column, there were no missing values, however some inconsistencies in formatting were noted and duly corrected. I replaced values that were "unknown" with the mean value of the column. 
+
+Change the numerical values in the gender column to align with the data dictionary using the `case_match` function
+Gender:
+
+1 - Female
+2 - Male
+```{r}
+food_choices %>% select(Gender) %>% unique() # inspect the values in this column
+food_choices$Gender <- food_choices %>% select(Gender) %>% mutate(Gender= case_match(Gender, 1 ~ 'Female', 2 ~ 'Male'))
+food_choices$Gender <-as.character(food_choices$Gender$Gender)
+```
+
+utilize case when to change the values in the exercise column 
+exercise:
+
+- 1 - Everyday 
+- 2 - 2 -3 times weekly 
+- 3 - Once a week
+
+```{r}
+food_choices %>% select(exercise) %>% unique() #inspect for missing values
+food_choices$exercise <-  food_choices %>% select(exercise) %>% mutate(exercise = case_when(exercise == 1 ~ 'Everyday', exercise == 2 ~ '2-3 times weekly',exercise== 3 ~ 'Once a week'))
+food_choices$exercise <- as.character(food_choices$exercise$exercise)
+```
+
+In the weight column, the following inconsistencies have been observed 
+
+- 144lbs
+- Not sure, 240
+- i'm not answering this.
+- NA
+
+I'll use the `str_replace` function for data cleaning here. Also, unknown values were replaced with the mean of the weight column
+```{r}
+table(food_choices$weight)
+# clean up values containing "lbs" and "not sure"
+lbs <- str_subset(food_choices$weight, "lbs$")
+ns <- str_subset(food_choices$weight, "Not")
+food_choices$weight[which(food_choices$weight %in% lbs)] <- str_replace(lbs, "144 lbs", "144")
+food_choices$weight[which(food_choices$weight %in% ns)] <- str_replace(ns, "Not sure, 240$", "240")
+
+# to avoid data loss, replace unspecified values with the mean of the column
+unsp <- str_subset(food_choices$weight, "^[^0-9].*") #regex to check for non-numeric entries
+sp <- str_subset(food_choices$weight, "^[0-9].*")
+food_choices$weight[which(food_choices$weight %in% unsp)] <- round(mean(as.numeric(sp)), 0) # replace them here with the meanq
+food_choices$weight <-  as.numeric(food_choices$weight)
+```
+
+To answer the 2nd question, these variables will be of interest; `exercise`, `nutritional_checks`, `veggie_day`, `fruit_day`. The `exercise` column has been cleaned already. 
+
+The values to be replaced in the nutritional check column: 
+
+- 1 - Never
+- 2 - On certain products
+- 3 - Very rarely
+- 4 - On most products
+- 5 - On everything
+```{r}
+table(food_choices$nutritional_check)
+# the integer responses need to be changed to a more meaningful format 
+food_choices$nutritional_check <-  food_choices %>% select(nutritional_check) %>% mutate(nutritional_check = case_match(nutritional_check, 1 ~ "Never", 2 ~ "Certain products only", 3 ~ "Very rarely", 4 ~ "On most products", 5 ~ "On everything"))
+food_choices$nutritional_check <- as.character(food_choices$nutritional_check$nutritional_check)
+```
+
+Same will be done using the veggies_day column. Importantly, the values were converted to factors, to aid the reintegration into the dataframe. 
+```{r}
+table(food_choices$veggies_day)
+# same has to be done for the veggies_day column
+food_choices$veggies_day <-  food_choices %>% select(veggies_day) %>% mutate(veggies_day = case_match(veggies_day, 1 ~ "Very unlikely", 2 ~ "unlikely", 3 ~ "neutral", 4 ~ "likely", 5 ~ "very likely"))
+food_choices$veggies_day <- factor(food_choices$veggies_day$veggies_day, levels = c("very unlikely", "unlikely", "neutral", "likely", "very likely"))
+```
+
+Repeat this step for the fruit_day column also.
+```{r}
+table(food_choices$fruit_day)
+food_choices$fruit_day <- food_choices %>% select(fruit_day) %>% mutate(fruit_day = case_match(fruit_day, 1 ~ "Very unlikely", 2 ~ "unlikely", 3 ~ "neutral", 4 ~ "likely", 5 ~ "very likely"))
+food_choices$fruit_day <- factor(food_choices$fruit_day$fruit_day, levels = c("very unlikely", "unlikely", "neutral", "likely", "very likely"))
+```
+
+convert the values in these columns to lowercase to ensure consistent formatting
+```{r}
+food_choices$comfort_food <-  str_to_lower(food_choices$comfort_food)
+food_choices$comfort_food_reasons<- str_to_lower(food_choices$comfort_food_reasons)
+```
+
+Now, to dive into deeper waters, I want to clean the father_profession column. There are 2 steps in this phase; 
+- Trim words that contain extra spaces 
+- There are some misspelled words in this column that need to be corrected. 
+```{r}
+table(str_to_lower(food_choices$father_profession))
+reg <- "\\s$"
+# some words end with spaces which have to be cleaned
+string_space <- str_subset(food_choices$father_profession, reg) # extract words that end with spaces
+food_choices$father_profession <-  ifelse(food_choices$father_profession %in% string_space, sub(reg, "", string_space), # substitute these words with the cleaned strings 
+food_choices$father_profession)
+
+```
+To handle the misspelled words, I'll use the hunspell library. The hunspell library will act as a spellchecker here. The code, albeit bulky, has been well labelled to make the logic here easy to follow. 
+```{r}
+library(hunspell)
+exempt_words <- c("Idk", "nan", "HVAC", "GNC", "Kirila") #words the spellchecker should ignore
+# write a function that checks for misspelled words that are not part of the exempt words and corrects them accordingly
+correct_spelling <- function(sentence, exempt_words) {  
+  words <- unlist(strsplit(food_choices$father_profession, "\\s+")) #split all sentences into individual words
+  wrong_words <- unlist(hunspell(words, dict = dictionary("en_US")))
+  wrong_words <- setdiff(wrong_words, exempt_words) # remove words found in exempt words
+  suggestions <- hunspell_suggest(wrong_words, dict = dictionary("en_US")) # spelling corrections for potentially misspelled words
+  corrected_words <- vector("list", length = length(wrong_words)) # store the corrected words in a vector
+  
+  for (i in seq_along(wrong_words)) { #  iterate over the wrong words to check if corrections exist and then select the first suggestion
+    if(length(suggestions[[i]])>0) {
+      corrected_words[[i]] <- suggestions[[i]][1]
+    } else {
+      corrected_words[[i]] <- wrong_words[i]
+    }
+  }
+  corrected_sentence <- sentence
+  for (i in seq_along(wrong_words)) { # use gsub to replace occurrences of wrong spellings with the right one
+    corrected_sentence <- gsub(wrong_words[i], corrected_words[[i]], corrected_sentence)
+  }
+  return(corrected_sentence)
+}
+
+# iterate through each observation in the column and then apply the correction function 
+food_choices$father_profession <-sapply(food_choices$father_profession, function(x) correct_spelling(x, exempt_words))
+
+# replace some unhelpful values with unknown
+food_choices %>% 
+  select(father_profession) %>% 
+  mutate(father_profession= ifelse(father_profession %in% c("idk", "nan", "not sure"), "unknown", father_profession))
+```
+
+Overall, this project has helped to solidify my understanding of some functions essential for data cleaning in R. I hope anyone reading this has also found it useful!
+
+AJANAKU AYOMIDE
